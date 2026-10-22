@@ -1,0 +1,34 @@
+name: AniList home mirror
+
+# Refreshes home-FALL-2026.json (seasonal name changes with the quarter) from the
+# AniList GraphQL API. cortanime.eu's worker reads this file via raw.githubusercontent.com
+# when live AniList is unreachable (Cloudflare Workers egress 403 since 2026-10-18).
+# Public data only — no secrets required. Runs every 30 minutes.
+
+on:
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch AniList home snapshot
+        run: python3 tools/al_mirror_seed.py --out-dir .
+      - name: Commit (single rolling tip commit)
+        run: |
+          git config user.name al-mirror
+          git config user.email al-mirror@users.noreply.github.com
+          git add -A
+          if git rev-parse --verify HEAD^ >/dev/null 2>&1 && git log -1 --pretty=%s | grep -q '^al-mirror refresh'; then
+            git commit --amend --no-edit -m "al-mirror refresh $(date -u +%FT%HZ)"
+          else
+            git commit --allow-empty -m "al-mirror refresh $(date -u +%FT%HZ)"
+          fi
+          git push -f origin HEAD:main
